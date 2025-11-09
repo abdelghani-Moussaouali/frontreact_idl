@@ -1,77 +1,142 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Users, Search, Plus, Edit2, Trash2, Mail, BookOpen, TrendingUp, Eye, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
+import axios from "axios"
+import { id } from "date-fns/locale"
 
 interface Student {
   id: string
   firstName: string
   lastName: string
   email: string
-  university: string
-  enrolledCourses: number
+  univ: number
+
 }
 
 export function StudentDashboard() {
-  const [students, setStudents] = useState<Student[]>([
-    {
-      id: "1",
-      firstName: "Ahmed",
-      lastName: "Benmessaoud",
-      email: "ahmed@univ.edu",
-      university: "Abdelhamid Mehri",
-      enrolledCourses: 4,
-    },
-    {
-      id: "2",
-      firstName: "Fatima",
-      lastName: "Zahra",
-      email: "fatima@univ.edu",
-      university: "Abdelhamid Mehri",
-      enrolledCourses: 3,
-    },
-    {
-      id: "3",
-      firstName: "Mohamed",
-      lastName: "Ali",
-      email: "mohamed@univ.edu",
-      university: "Abdelhamid Mehri",
-      enrolledCourses: 5,
-    },
-  ])
+  const [students, setStudents] = useState<Student[]>([]);
   const [searchTerm, setSearchTerm] = useState("")
   const [showForm, setShowForm] = useState(false)
-  const [formData, setFormData] = useState({ firstName: "", lastName: "", email: "", university: "" })
+  const [formData, setFormData] = useState({ firstName: "", lastName: "", email: "", univ: 0 })
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
   const [editingStudent, setEditingStudent] = useState<Student | null>(null)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
 
-  const filteredStudents = students.filter(
-    (student) =>
-      `${student.firstName} ${student.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      student.email.toLowerCase().includes(searchTerm.toLowerCase()),
-  )
 
-  const handleAddStudent = () => {
+
+
+
+  useEffect(() => {
+    axios.get("http://127.0.0.1:8000/api/v1/student/", { timeout: 5000 })
+      .then(res => {
+        const response = Array.isArray(res.data) ? res.data : res.data.results || [];
+        const students: Student[] = response.map((item: any) => ({
+          id: item.id?.toString() || '',
+          firstName: item.first_name ?? item.firstName ?? '',
+          lastName: item.last_name ?? item.lastName ?? '',
+          email: item.email ?? '',
+          univ: 1
+        }));
+        setStudents(students);
+
+
+      })
+      .catch(err => {
+        if (err.response) {
+          console.error("Server responded with error:", err.response);
+        } else if (err.request) {
+          console.error("No response received:", err.request);
+        } else {
+          console.error("Axios error:", err.message);
+        }
+      });
+
+  }, [students]);
+
+
+  const filteredStudents = Array.isArray(students)
+    ? students.filter(
+      (student) =>
+        `${student.firstName} ${student.lastName}`
+          .toLowerCase()
+          .includes(searchTerm.toLowerCase()) ||
+        student.email.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+    : [];
+
+
+  const handleAddStudent = async () => {
     if (formData.firstName && formData.lastName && formData.email) {
-      const newStudent: Student = {
-        id: Date.now().toString(),
-        ...formData,
-        enrolledCourses: 0,
-      }
-      setStudents([...students, newStudent])
-      setFormData({ firstName: "", lastName: "", email: "", university: "" })
-      setShowForm(false)
-    }
-  }
+      try {
+        const res = await axios.post("http://127.0.0.1:8000/api/v1/student/add/", {
+          first_name: formData.firstName,
+          last_name: formData.lastName,
+          email: formData.email,
+          univ: formData.univ
+        });
+        setStudents(res.data);
+        setFormData({ firstName: "", lastName: "", email: "", univ: 0 });
+        setShowForm(false);
 
-  const handleDeleteStudent = (id: string) => {
-    setStudents(students.filter((s) => s.id !== id))
-  }
+      } catch (error) {
+
+        if (axios.isAxiosError(error)) {
+          if (error.response) {
+            console.error("Server responded with error:", error.response);
+          } else if (error.request) {
+            console.error("No response received:", error.request);
+          } else {
+            console.error("Axios error:", error.message);
+          }
+        } else {
+
+          console.error("Unexpected error:", error);
+        }
+      }
+    }
+  };
+
+
+
+  const handleDeleteStudent = async (id: string) => {
+
+    if (!id) return;
+
+    const confirmDelete = window.confirm("Are you sure you want to delete this student?");
+
+    if (!confirmDelete) return;
+
+    try {
+      const res = await axios.delete(
+        `http://127.0.0.1:8000/api/v1/student/${id}/delete/`,
+        {
+          headers: {
+            "Content-Type": "application/json",
+          },
+          timeout: 5000,
+        }
+      );
+
+      console.log("✅ Student deleted:", res.status, res.data);
+
+      setStudents((prev) => prev.filter((s) => s.id !== id));
+
+    } catch (err: any) {
+      if (axios.isAxiosError(err)) {
+        console.error(
+          "❌ Delete failed:",
+          err.response?.data || err.message || "Unknown error"
+        );
+      } else {
+        console.error("❌ Unexpected error:", err);
+      }
+    }
+  };
 
   const handleViewDetails = (student: Student) => {
     setSelectedStudent(student)
@@ -83,9 +148,39 @@ export function StudentDashboard() {
     setShowEditModal(true)
   }
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (editingStudent) {
-      setStudents(students.map((s) => (s.id === editingStudent.id ? editingStudent : s)))
+      try {
+
+        const res = await axios.put(
+          `http://127.0.0.1:8000/api/v1/student/${editingStudent.id}/update/`,
+          {
+            first_name: editingStudent.firstName,
+            last_name: editingStudent.lastName,
+            email: editingStudent.email,
+            univ: 0
+          },
+          {
+            headers: {
+              "Content-Type": "application/json",
+            },
+            timeout: 5000,
+          }
+        );
+    
+
+      } catch (err: any) {
+        console.log(err.response?.data || err.message || "Unknown error")
+        if (axios.isAxiosError(err)) {
+          console.error(
+            " update failed:",
+            err.response?.data || err.message || "Unknown error"
+          );
+        } else {
+          console.error(" Unexpected error:", err);
+        }
+      }
+      setStudents(students.map((c) => (c.id === editingStudent.id ? editingStudent : c)))
       setShowEditModal(false)
       setEditingStudent(null)
     }
@@ -152,12 +247,7 @@ export function StudentDashboard() {
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
               className="bg-white border-slate-300"
             />
-            <Input
-              placeholder="University"
-              value={formData.university}
-              onChange={(e) => setFormData({ ...formData, university: e.target.value })}
-              className="bg-white border-slate-300"
-            />
+
           </div>
           <div className="flex gap-2">
             <Button
@@ -183,8 +273,8 @@ export function StudentDashboard() {
             <div className="flex items-start justify-between mb-4">
               <div className="w-14 h-14 bg-gradient-to-br from-blue-400 to-cyan-300 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
                 <span className="text-2xl font-bold text-white">
-                  {student.firstName[0]}
-                  {student.lastName[0]}
+                  {student.firstName[0] ?? ''}
+                  {student.lastName[0] ?? ''}
                 </span>
               </div>
               <div className="flex gap-2">
@@ -210,7 +300,7 @@ export function StudentDashboard() {
             <h3 className="font-bold text-lg text-slate-900 mb-1">
               {student.firstName} {student.lastName}
             </h3>
-            <p className="text-sm text-slate-600 mb-4 font-medium">{student.university}</p>
+            <p className="text-sm text-slate-600 mb-4 font-medium">{'abdelhamid mehri'}</p>
 
             <div className="space-y-3 mb-4 text-sm">
               <div className="flex items-center gap-2 text-slate-700">
@@ -219,7 +309,7 @@ export function StudentDashboard() {
               </div>
               <div className="flex items-center gap-2 text-slate-700">
                 <BookOpen className="w-4 h-4 text-cyan-500" />
-                <span className="text-slate-600">{student.enrolledCourses} courses enrolled</span>
+                <span className="text-slate-600">{2} courses enrolled</span>
               </div>
             </div>
 
@@ -261,7 +351,9 @@ export function StudentDashboard() {
             <div>
               <p className="text-slate-600 text-sm mb-1 font-medium">Avg Enrollment</p>
               <p className="text-4xl font-bold text-cyan-600">
-                {(students.reduce((acc, s) => acc + s.enrolledCourses, 0) / students.length).toFixed(1)}
+                {students.length
+                  ? (students.reduce((acc, s) => acc, 0) / students.length).toFixed(1)
+                  : 0.0}
               </p>
             </div>
             <TrendingUp className="w-10 h-10 text-cyan-400/30" />
@@ -300,11 +392,11 @@ export function StudentDashboard() {
               </div>
               <div>
                 <p className="text-sm text-slate-600 font-medium">University</p>
-                <p className="text-slate-900 font-semibold">{selectedStudent.university}</p>
+                <p className="text-slate-900 font-semibold">{'abdelhamid mehri'}</p>
               </div>
               <div>
                 <p className="text-sm text-slate-600 font-medium">Enrolled Courses</p>
-                <p className="text-slate-900 font-semibold">{selectedStudent.enrolledCourses}</p>
+                <p className="text-slate-900 font-semibold">{2}</p>
               </div>
               <div>
                 <p className="text-sm text-slate-600 font-medium">Student ID</p>
@@ -350,12 +442,12 @@ export function StudentDashboard() {
                 onChange={(e) => setEditingStudent({ ...editingStudent, email: e.target.value })}
                 className="bg-slate-50 border-slate-300"
               />
-              <Input
+              {/* <Input
                 placeholder="University"
-                value={editingStudent.university}
-                onChange={(e) => setEditingStudent({ ...editingStudent, university: e.target.value })}
+                // value={editingStudent.university}
+                // onChange={(e) => setEditingStudent({ ...editingStudent, university: e.target.value })}
                 className="bg-slate-50 border-slate-300"
-              />
+              /> */}
             </div>
             <div className="flex gap-2 mt-6">
               <Button
