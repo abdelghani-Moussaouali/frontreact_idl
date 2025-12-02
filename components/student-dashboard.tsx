@@ -8,7 +8,7 @@ import { Card } from "@/components/ui/card"
 import axios from "axios"
 import { id } from "date-fns/locale"
 import { Items } from "./ui/dropdown"
-
+import { DocumentNode, gql, } from "@apollo/client";
 
 interface Student {
   id: string
@@ -18,23 +18,58 @@ interface Student {
 }
 
 interface University {
-  id: 1,
+  id: string,
   name: string
 }
+
+
 
 export function StudentDashboard() {
   const [students, setStudents] = useState<Student[]>([]);
   const [university, setUniversity] = useState<University[]>([]);
   const [searchTerm, setSearchTerm] = useState("")
   const [showForm, setShowForm] = useState(false)
-  const [formData, setFormData] = useState({ name: "", address: "", univ: 1 })
+  const [formData, setFormData] = useState({ name: "", address: "", univ: 0 })
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
   const [editingStudent, setEditingStudent] = useState<Student | null>(null)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
+  const [universities, setUniversities] = useState<University[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
 
   useEffect(() => {
+    const fetchUniversities = async () => {
+      try {
+        // Encode the query for URL
+        const query = encodeURIComponent(`
+          query {
+            universities {
+              id
+              name
+            }
+          }
+        `);
 
+        const res = await fetch(`http://localhost:8001/api/graphql/?query=${query}`);
+        const json = await res.json();
+
+        setUniversities(json.data.universities);
+      } catch (err: any) {
+        setError(err.message || "Error fetching universities");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUniversities();
+  }, []);
+
+
+
+
+  useEffect(() => {
     axios.get("http://localhost:8001/api/student/all", { timeout: 5000 })
       .then(res => {
 
@@ -90,9 +125,12 @@ export function StudentDashboard() {
 
 
   const handleAddStudent = async () => {
-    if (formData.name && formData.address) {
+
+    if (formData.univ && formData.name && formData.address) {
+      console.log(formData.name + " " + formData.address + " " + formData.univ)
       try {
         const res = await axios.post("http://127.0.0.1:8001/api/student/add", {
+
           name: formData.name,
           address: formData.address,
           university: {
@@ -107,6 +145,7 @@ export function StudentDashboard() {
         if (axios.isAxiosError(error)) {
           // setShowError(true)
           if (error.response) {
+            alert("Error response:" + JSON.stringify(error.response.data));
             // setErrormessage(
             //   Object.entries(error.response.data)
             //     .map(([field, messages]) => {
@@ -170,7 +209,6 @@ export function StudentDashboard() {
   }
 
   const handleEditStudent = (student: Student) => {
-   
     setEditingStudent({ ...student })
     setShowEditModal(true)
   }
@@ -178,14 +216,12 @@ export function StudentDashboard() {
   const handleSaveEdit = async () => {
     if (editingStudent) {
       try {
-
         const res = await axios.put(
-          `http://127.0.0.1:8001/api/v1/student/${editingStudent.id}/update/`,
+          `http://127.0.0.1:8001/api/student/update/${editingStudent.id}`,
           {
             name: editingStudent.name,
             address: editingStudent.address,
-
-            univ: { id: editingStudent.university.id }
+            university: { id: editingStudent.university.id }
           },
           {
             headers: {
@@ -194,17 +230,16 @@ export function StudentDashboard() {
             timeout: 5000,
           }
         );
-
-
       } catch (err: any) {
-        console.log(err.response?.data || err.message || "Unknown error")
+
         if (axios.isAxiosError(err)) {
-          console.error(
-            " update failed:",
-            err.response?.data || err.message || "Unknown error"
-          );
+          console.error("Axios error:");
+          console.log("Status:", err.response?.status);
+          console.log("Headers:", err.response?.headers);
+          console.log("Data:", err.response?.data);
+          console.log("Request:", err.request);
         } else {
-          console.error(" Unexpected error:", err);
+          console.error("Unexpected error:", err);
         }
       }
       setStudents(students.map((c) => (c.id === editingStudent.id ? editingStudent : c)))
@@ -279,12 +314,19 @@ export function StudentDashboard() {
               onChange={(e) => setFormData({ ...formData, address: e.target.value })}
               className="bg-white border-slate-300"
             />
-            <Items defaultValue="" className="bg-white border-slate-300">
+            <Items defaultValue="" className="bg-white border-slate-300" value={formData.univ}
+              onChange={(e) => setFormData({ ...formData, univ: Number(e.target.value) })}>
 
-              <option value="" disabled>Select a university</option>
-              {filteredUniversity.map((univ) => <option>
-                {univ.name}
-              </option>)}
+              <option value='0' disabled>
+                Select a university
+              </option>
+              {universities.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
+                </option>
+              ))}
+
+
             </Items>
 
 
@@ -340,7 +382,7 @@ export function StudentDashboard() {
             <h3 className="font-bold text-lg text-slate-900 mb-1">
               {student.name}
             </h3>
-            <p className="text-sm text-slate-600 mb-4 font-medium">{'abdelhamid mehri'}</p>
+            <p className="text-sm text-slate-600 mb-4 font-medium">{student.university.name}</p>
 
             <div className="space-y-3 mb-4 text-sm">
               <div className="flex items-center gap-2 text-slate-700">
@@ -467,21 +509,41 @@ export function StudentDashboard() {
                 onChange={(e) => setEditingStudent({ ...editingStudent, name: e.target.value })}
                 className="bg-slate-50 border-slate-300"
               />
-
-
               <Input
                 placeholder="Address"
                 type="text"
                 value={editingStudent.address}
-                onChange={(e) => setEditingStudent({ ...editingStudent, address: e.target.value })}
+                onChange={(e) =>{
+                 
+                  setEditingStudent({ ...editingStudent, address: e.target.value })}}
                 className="bg-slate-50 border-slate-300"
               />
-              <Input
-                placeholder="University"
-                value={editingStudent.university.name}
-                onChange={(e) => setEditingStudent({ ...editingStudent, university: { ...editingStudent.university, name: e.target.value } })}
-                className="bg-slate-50 border-slate-300"
-              />
+              <Items value={editingStudent.university.id} className="bg-white border-slate-300"
+                onChange={
+
+                  (e) => {
+                    alert( e.target.value)
+                    alert(editingStudent.university.name)
+                    setEditingStudent({
+
+                    ...editingStudent, university: {
+                      id: e.target.value,
+                      name: editingStudent.university.name
+                    }
+                  }
+                  )}}>
+
+                <option defaultValue={editingStudent.university.id} disabled>
+                  Select a university
+                </option>
+                {universities.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}
+                  </option>
+                ))}
+
+
+              </Items>
             </div>
             <div className="flex gap-2 mt-6">
               <Button
@@ -500,3 +562,7 @@ export function StudentDashboard() {
     </section>
   )
 }
+function useQuery(GET_UNIVERSITIES: DocumentNode): { data: any; loading: any; error: any } {
+  throw new Error("Function not implemented.")
+}
+
